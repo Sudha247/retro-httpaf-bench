@@ -18,10 +18,10 @@ module BenchmarkServer = struct
   ;;
 
 end
+open Eio.Std
 
 let main port max_active io_buf =
   let handler = BenchmarkServer.benchmark in
-  Lwt_engine.set (new Lwt_engine.libev ()) ;
   if max_active > 0 then Conduit_lwt_unix.set_max_active max_active;
   Lwt_io.set_default_buffer_size io_buf;
   let open Cohttp_lwt_unix in
@@ -30,7 +30,11 @@ let main port max_active io_buf =
     ~mode:(`TCP (`Port port))
     (Server.make ~callback:handler ())
   in
-  Lwt_main.run server
+  Eio_luv.run @@ fun env ->
+  let clock = Eio.Stdenv.clock env in
+  Lwt_eio.with_event_loop ~clock @@ fun () ->
+  Switch.run @@ fun sw ->
+  Fibre.fork ~sw (fun () -> Lwt_eio.Promise.await_lwt server)
 ;;
 
 let () =
